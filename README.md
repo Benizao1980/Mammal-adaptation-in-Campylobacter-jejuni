@@ -172,6 +172,154 @@ This analysis identifies accessory gene families whose distribution is significa
 
 ---
 
+## Core-genome phylogeny with IQ-TREE
+
+To infer a high-quality maximum-likelihood (ML) phylogeny from the PIRATE core alignment, we used IQ-TREE2 on the nucleotide core alignment (PIRATE_out/core_alignment.fasta) under a GTR+F+I+G4 model, with branch support from both ultrafast bootstrap and SH-aLRT. The resulting tree provides the fixed topology required by ClonalFrameML.
+
+```bash
+iqtree2 \
+  -s PIRATE_out/core_alignment.fasta \
+  -m GTR+F+I+G4 \
+  -T 40 \
+  -B 1000 \
+  --alrt 1000 \
+  --prefix zang_core \
+  --seed 12345 \
+  --safe
+```
+
+*Commentary:*
+This run used IQ-TREE2 v2.3.6, inferred a tree from 2,327 sequences with an alignment length of 1,371,024 bp, and used a fixed seed for reproducibility. 
+
+### Key outputs
+
+- zang_core.treefile — **ML tree** (Newick; used for ClonalFrameML)
+- zang_core.iqtree / zang_core.log — **run record and model details**
+- zang_core.ckp.gz — **checkpoint file for safe/restart mode**
+- zang_core.mldist — **pairwise ML distances** (optional downstream use)
+
+## Recombination-aware inference with ClonalFrameML (CF-ML)
+
+We next used ClonalFrameML to infer recombinant tracts on the fixed IQ-TREE topology, enabling downstream analyses on a recombination-masked alignment (or recombination-aware branch lengths, depending on the application).
+
+### Inputs
+
+- Tree: zang_core.treefile (IQ-TREE output)
+- Alignment: PIRATE_out/core_alignment.fasta (core alignment)
+
+Example SLURM job
+```slurm
+#!/bin/bash
+#SBATCH --job-name=cfml_core
+#SBATCH --output=slurm_logs/cfml_%A.out
+#SBATCH --error=slurm_logs/cfml_%A.err
+#SBATCH --account=cooperma
+#SBATCH --partition=standard
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=20
+#SBATCH --time=72:00:00
+#SBATCH --mem=160G
+
+set -euo pipefail
+source ~/.bashrc
+conda activate clonalframeml
+
+cd /groups/cooperma/bpascoe/Zang_cdtB
+mkdir -p slurm_logs cfml_snps_out
+
+TREE="iqtree/zang_core.treefile"
+ALN="PIRATE_out/core_alignment.fasta"
+OUT="cfml_core_out/cfml_core"
+
+test -s "$TREE"
+test -s "$ALN"
+
+ClonalFrameML "$TREE" "$ALN" "$OUT"
+```
+
+### Key CF-ML outputs (by prefix)
+
+- Given OUT="cfml_core_out/cfml_core", ClonalFrameML will produce (among others):
+- cfml_core_out/cfml_core.labelled_tree.newick
+- cfml_core_out/cfml_core.importation_status.txt
+- cfml_core_out/cfml_core.em.txt
+
+These are the required inputs for recombination masking in the next step.
+
+## Mask recombination tracts (CF-ML → masked alignment)
+
+To generate a recombination-masked core alignment for downstream phylogenetic inference and association testing, we applied a masking script that converts CF-ML inferred recombinant segments into per-isolate masked sites (default mask symbol: N).
+
+We used the updated script cfml-maskrc_updated.py, which adds robustness and useful outputs (ID normalization, interval merging, optional ancestral masking, per-isolate masking metrics, optional SVG plotting, and rectangular alignment checks). 
+
+
+Minimal masking run (extant recombination only)
+```bash
+python3 cfml-maskrc_updated.py \
+  cfml_core_out/cfml_core \
+  --aln PIRATE_out/core_alignment.fasta \
+  --out cfml_core_out/core_alignment.masked \
+  --symbol N \
+  --regions cfml_core_out/recomb_regions.tsv \
+  --metrics cfml_core_out/recomb_masking_metrics.tsv
+```
+
+This produces:
+
+- cfml_core_out/core_alignment.masked.fasta (masked alignment) 
+- cfml-maskrc_updated
+- cfml_core_out/recomb_regions.tsv (per-isolate recombinant intervals) 
+- cfml-maskrc_updated
+- cfml_core_out/recomb_masking_metrics.tsv (bp masked, segment counts, fraction masked; can embed CF-ML params if detected) 
+
+*Optional:* also mask ancestral segments
+
+If you want to mask segments inferred on internal branches (not just leaf-specific “extant” imports), add:
+
+```
+  --mask-ancestral
+```
+
+*Commentary:*
+Masking ancestral segments is more aggressive and may be appropriate if your downstream method is sensitive to deep recombination signal; for many applications, extant-only masking is a good default.
+
+Optional: generate an SVG summary plot
+
+```bash
+python3 cfml-maskrc_updated.py \
+  cfml_core_out/cfml_core \
+  --aln PIRATE_out/core_alignment.fasta \
+  --out cfml_core_out/core_alignment.masked \
+  --svg cfml_core_out/recombination_map.svg \
+  --svgsize 1200x800 \
+  --svgcolour black \
+  --consensus
+```
+
+This yields a compact “recombination barcode” view across isolates plus an optional consensus/hotspot track. 
+
+## Downstream: phylogeny on recombination-masked alignment (recommended)
+
+Once masking is complete, re-infer an ML tree on the masked alignment to obtain branch lengths/topology less driven by homologous recombination:
+
+```bash
+iqtree2 \
+  -s cfml_core_out/core_alignment.masked.fasta \
+  -m GTR+F+I+G4 \
+  -T 40 \
+  -B 1000 \
+  --alrt 1000 \
+  --prefix zang_core.masked \
+  --seed 12345 \
+  --safe
+```
+
+*Interpretation:*
+This “masked-core” tree is typically the best default for host-association, trait mapping, and selection/structure analyses where recombination can inflate apparent homoplasy or distort branch lengths.
+
+---
+
 ## Reproducibility, software versions, and resources
 
 All analyses were performed on an HPC cluster using SLURM.
@@ -179,13 +327,22 @@ All analyses were performed on an HPC cluster using SLURM.
 ### Software
 - Prokka v1.14.x — https://github.com/tseemann/prokka
 - PIRATE v1.0.x — https://github.com/SionBayliss/PIRATE
+- PIRATE additional analyses scripts <link><link><link>
+- IQ-TREE2 v2.3.6 - <link>
+- ClonalFrameML v1.0.x - <link>
+- ClonalFrameML masking script - <link>
 - Python v3.9+ — https://www.python.org
 - Conda — https://docs.conda.io
 
 ### Reproducibility notes
 - All genomes processed with identical parameters
-- Conda environments used throughout
-- Randomisation steps controlled via fixed seeds where applicable
+- FigShare link to genomes -
+- PubMLST shared proejct - 
+- microreact link to tree and isoalte data -
+- - Conda environments used throughout
+
+### Please cite: 
+TBC <link to manuscript>
 
 ---
 
