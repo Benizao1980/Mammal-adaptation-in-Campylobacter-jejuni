@@ -207,6 +207,10 @@ We next used ClonalFrameML to infer recombinant tracts on the fixed IQ-TREE topo
 - Tree: zang_core.treefile (IQ-TREE output)
 - Alignment: PIRATE_out/core_alignment.fasta (core alignment)
 
+```bash
+ClonalFrameML zang_core.treefile PIRATE_out/core_alignment.fasta cfml_core
+```
+
 Example SLURM job
 ```slurm
 #!/bin/bash
@@ -238,14 +242,18 @@ test -s "$ALN"
 ClonalFrameML "$TREE" "$ALN" "$OUT"
 ```
 
-### Key CF-ML outputs (by prefix)
-
-- Given OUT="cfml_core_out/cfml_core", ClonalFrameML will produce (among others):
+Given OUT="cfml_core_out/cfml_core", ClonalFrameML will produce (among others):
 - cfml_core_out/cfml_core.labelled_tree.newick
 - cfml_core_out/cfml_core.importation_status.txt
 - cfml_core_out/cfml_core.em.txt
+- 
+*ClonalFrameML inferred:*
 
-These are the required inputs for recombination masking in the next step.
+- Genome-wide recombination rate relative to mutation (r/m ≈ 0.62)
+- Low recombination initiation rate (ρ/θ ≈ 0.003)
+- Recombination tract lengths on the order of a few hundred base pairs
+
+Together, these indicate frequent but relatively short homologous recombination events, consistent with prior observations in Campylobacter populations.
 
 ## Mask recombination tracts (CF-ML → masked alignment)
 
@@ -253,6 +261,14 @@ To generate a recombination-masked core alignment for downstream phylogenetic in
 
 We used the updated script cfml-maskrc_updated.py, which adds robustness and useful outputs (ID normalization, interval merging, optional ancestral masking, per-isolate masking metrics, optional SVG plotting, and rectangular alignment checks). 
 
+### Masking approach
+
+- Recombinant tracts were extracted from cfml_core.importation_status.txt
+- Masking was applied to the original core genome alignment
+- By default, only extant recombination events were masked (ancestral recombination retained)
+- Masked sites were replaced with N, preserving alignment structure
+
+This approach removes recent horizontal signal while retaining deep phylogenetic structure.
 
 Minimal masking run (extant recombination only)
 ```bash
@@ -260,18 +276,16 @@ python3 cfml-maskrc_updated.py \
   cfml_core_out/cfml_core \
   --aln PIRATE_out/core_alignment.fasta \
   --out cfml_core_out/core_alignment.masked \
-  --symbol N \
-  --regions cfml_core_out/recomb_regions.tsv \
   --metrics cfml_core_out/recomb_masking_metrics.tsv
 ```
 
-This produces:
+Outputs included:
+- core_alignment.masked.fasta – recombination-masked alignment
+- recomb_masking_metrics.tsv – per-isolate recombination burden
+- recomb_regions.tsv – genomic coordinates of inferred recombination
 
-- cfml_core_out/core_alignment.masked.fasta (masked alignment) 
-- cfml-maskrc_updated
-- cfml_core_out/recomb_regions.tsv (per-isolate recombinant intervals) 
-- cfml-maskrc_updated
-- cfml_core_out/recomb_masking_metrics.tsv (bp masked, segment counts, fraction masked; can embed CF-ML params if detected) 
+*Optional SVG visualisations were generated to illustrate recombination density along the genome.*
+
 
 *Optional:* also mask ancestral segments
 
@@ -284,20 +298,12 @@ If you want to mask segments inferred on internal branches (not just leaf-specif
 *Commentary:*
 Masking ancestral segments is more aggressive and may be appropriate if your downstream method is sensitive to deep recombination signal; for many applications, extant-only masking is a good default.
 
-Optional: generate an SVG summary plot
+- Alignment length preserved across all isolates
+- Recombination tracts replaced by ambiguity characters (N)
+- Substantial heterogeneity in recombination burden across isolates
+- Masking removed large recombinant blocks while preserving phylogenetic signal
 
-```bash
-python3 cfml-maskrc_updated.py \
-  cfml_core_out/cfml_core \
-  --aln PIRATE_out/core_alignment.fasta \
-  --out cfml_core_out/core_alignment.masked \
-  --svg cfml_core_out/recombination_map.svg \
-  --svgsize 1200x800 \
-  --svgcolour black \
-  --consensus
-```
-
-This yields a compact “recombination barcode” view across isolates plus an optional consensus/hotspot track. 
+This masked alignment represents a recombination-aware substrate suitable for downstream evolutionary inference.
 
 ## Downstream: phylogeny on recombination-masked alignment (recommended)
 
