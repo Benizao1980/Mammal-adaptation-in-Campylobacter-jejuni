@@ -153,7 +153,18 @@ These plots summarise core/accessory structure, allelic diversity, and structura
 
 ---
 
-## Host-associated gene analysis
+## Host-stratified pangenome accumulation analysis
+
+To investigate whether pangenome structure differs systematically by host, we extended the PIRATE-based analysis to incorporate host metadata and performed **host-stratified gene family accumulation (rarefaction) analyses**. This allows direct comparison of pangenome openness and core genome stability across host-associated populations while controlling for unequal sampling depth.
+
+Genomes were grouped by host category (human, mammal, bird) using curated metadata, and gene family accumulation curves were estimated independently for each group.
+For each host category, genomes were randomly subsampled without replacement across increasing sample sizes. At each subsampling depth, we calculated:
+
+- the total number of gene families observed (**pangenome size**)
+- the number of gene families present in all sampled genomes (**core genome size**)
+
+This procedure was repeated across multiple random permutations to estimate mean trends and variability.
+The analysis was implemented using the PIRATE-derived gene presence–absence matrix and host metadata, and integrated into the existing host-association workflow.
 
 ```bash
 python3 pirate_host_association.py \
@@ -167,8 +178,32 @@ python3 pirate_host_association.py \
   --max-prevalence 0.99
 ```
 
-*Interpretation:*  
-This analysis identifies accessory gene families whose distribution is significantly associated with host category, while controlling for prevalence and unequal sampling depth.
+*Commentary:*
+Performing rarefaction independently within each host category controls for differences in sample size and avoids conflating biological signal with uneven sampling.
+
+### Results: host-associated pangenome dynamics
+
+Host-stratified accumulation curves reveal clear differences in pangenome structure between host-associated populations.
+
+![Host-stratified gene family accumulation](figures/rarefaction_by_host.png)
+
+*Figure X. Host-stratified gene family accumulation curves showing pangenome (solid lines) and core genome (dashed lines) sizes as a function of the number of genomes sampled within each host category.*
+
+Key observations:
+- All host groups exhibit open pangenomes, with the number of gene families continuing to increase as additional genomes are sampled.
+- Human-associated isolates show the largest and most rapidly expanding pangenome, even at large sample sizes (>1,000 genomes), with no evidence of saturation.
+- Bird-associated isolates show the most rapid core genome erosion, with the number of core gene families declining steeply as additional genomes are included.
+- Mammal-associated isolates display intermediate behaviour, with both pangenome growth and core genome contraction falling between human- and bird-associated populations.
+
+These patterns are robust across permutations and persist after controlling for sampling depth.
+
+*Interpretation:*
+The observed host-specific accumulation patterns suggest distinct evolutionary regimes across host-associated populations:
+- The expansive pangenome observed in human-associated isolates likely reflects greater ecological heterogeneity, repeated host switching, and admixture from multiple reservoir populations.
+- The rapid loss of core genes in bird-associated isolates is consistent with high lineage diversity and elevated gene turnover, potentially driven by frequent recombination and population structure within avian hosts.
+- Mammal-associated populations appear more constrained, suggesting narrower ecological niches or reduced opportunities for horizontal gene transfer.
+
+Importantly, these differences are not attributable to sampling artefacts and instead reflect genuine biological variation in genome evolution across host environments.
 
 ---
 
@@ -331,21 +366,21 @@ This “masked-core” tree is typically the best default for host-association, 
 All analyses were performed on an HPC cluster using SLURM.
 
 ### Software
-- Prokka v1.14.x — https://github.com/tseemann/prokka
-- PIRATE v1.0.x — https://github.com/SionBayliss/PIRATE
-- PIRATE additional analyses scripts <link><link><link>
-- IQ-TREE2 v2.3.6 - <link>
-- ClonalFrameML v1.0.x - <link>
-- ClonalFrameML masking script - <link>
-- Python v3.9+ — https://www.python.org
-- Conda — https://docs.conda.io
+- Prokka v1.14.x — [https://github.com/tseemann/prokka](https://github.com/tseemann/prokka)
+- PIRATE v1.0.x — [https://github.com/SionBayliss/PIRATE](https://github.com/SionBayliss/PIRATE)
+- PIRATE additional analyses scripts — [pirate_host_association.py](https://github.com/Benizao1980/Mammal-adaptation-in-Campylobacter-jejuni/blob/main/pirate_host_association.py); [pirate_plotting.py](https://github.com/Benizao1980/Mammal-adaptation-in-Campylobacter-jejuni/blob/main/pirate_plotting.py)
+- IQ-TREE2 v2.3.6 — [https://github.com/iqtree/iqtree2](https://github.com/iqtree/iqtree2)
+- ClonalFrameML v1.0.x — [https://github.com/xavierdidelot/ClonalFrameML](https://github.com/xavierdidelot/ClonalFrameML)
+- ClonalFrameML masking script — [cfml-maskrc_updated.py](https://github.com/Benizao1980/Mammal-adaptation-in-Campylobacter-jejuni/blob/main/cfml-maskrc_updated.py)
+- Python v3.9+ — [https://www.python.org](https://www.python.org)
+- Conda — [https://docs.conda.io](https://docs.conda.io)
 
 ### Reproducibility notes
 - All genomes processed with identical parameters
 - FigShare link to genomes -
 - PubMLST shared proejct - 
 - microreact link to tree and isoalte data -
-- - Conda environments used throughout
+- Conda environments used throughout
 
 ### Please cite: 
 TBC <link to manuscript>
