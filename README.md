@@ -366,11 +366,17 @@ This “masked-core” tree is typically the best default for host-association, 
 
 ## Genome-wide asociation with PYSEER (mammal isoaltes vs bird isolates)
 
+This section describes genome-wide association analyses performed using pyseer, correcting for population structure using a recombination-masked core-genome phylogeny.
+
+Unless otherwise stated, GWAS were performed using fixed effects (MDS covariates derived from patristic distances). This approach is widely used in bacterial GWAS and avoids instability observed with LMMs on large, strongly structured datasets.
+
 ### Prepare PYSEER input files
 
-Make a patristic distance matrix from the masked tree
+#### Patristic distance matrix from the masked tree
+Either compute distances directly from the masked tree:
+
 ```bash
-python - <<'EOF' > zang_core_masked.dist
+python - <<'EOF' > zang_core_masked.dist.tsv
 from ete3 import Tree
 import sys
 
@@ -387,15 +393,14 @@ for i, a in enumerate(leaves, 1):
         print(f"[progress] {i}/{n} rows", file=sys.stderr, flush=True)
     row = [a.name]
     for b in leaves:
-        row.append(str(t.get_distance(a, b)))  # node objects, not names
+        row.append(str(t.get_distance(a, b)))
     print("\t".join(row))
 EOF
 ```
 
-OR Convert zang_core_masked.mldist → pyseer distance TSV
+OR convert the IQ-TREE ML distance matrix:
 
-Run this in the same folder as the .mldist:
-```
+```bash
 python - <<'EOF'
 import sys
 
@@ -439,20 +444,19 @@ print(f"Wrote {outfile} ({n}x{n})", file=sys.stderr)
 EOF
 ```
 
-Convert metadata file into .tsv file
+This file is used to derive population structure covariates.
+
+#### Phenotype file (bird vs mammal)
+
 ```bash
 python - <<'EOF'
 import pandas as pd
 
 df = pd.read_csv("phenotypes.csv")
 
-# normalise host labels
 df["Host"] = df["Host"].astype(str).str.strip().str.lower()
-
-# keep bird + mammal only
 df = df[df["Host"].isin(["birds", "mammal"])].copy()
 
-# phenotype: bird=1, mammal=0
 df["phenotype"] = (df["Host"] == "birds").astype(int)
 
 df[["id", "phenotype"]].to_csv(
@@ -462,67 +466,94 @@ df[["id", "phenotype"]].to_csv(
     header=False
 )
 
-print("Wrote pyseer_birds_vs_mammal.pheno.tsv with", len(df), "samples")
-print(df["phenotype"].value_counts().rename({0:"mammal", 1:"birds"}))
+print(df["phenotype"].value_counts())
 EOF
 ```
 
-Sanity check: make sure phenotype IDs match your tree/dist IDs:
+Phenotype encoding:
+- 1 = bird
+- 0 = mammal
+
+Sanity check sample matching
+
 ```bash
 cut -f1 pyseer_birds_vs_mammal.pheno.tsv | sort > pheno.ids
 head -n 1 zang_core_masked.dist.tsv | tr '\t' '\n' | tail -n +2 | sort > dist.ids
 comm -3 pheno.ids dist.ids | head
 ```
 
+Expected output
+```
+
+```
+
 ### Run GWAS with genes, SNPs and unitigs
 
-#### Genes (presence/absence)
+#### 1. Genes (presence/absence)
 
-We already have a PIRATE gene presence/absence matrix (PIRATE.gene_families.tsv), the quickest robust way is to convert it with a small Python helper.
+Gene presence/absence GWAS (PIRATE)
+Generate a binary Rtab file (required by pyseer)
 
-From the folder ~/.../Zang_cdtB
+We convert PIRATE allele calls to a binary presence/absence matrix using the [PIRATE script](https://github.com/SionBayliss/PIRATE/blob/master/tools/convert_format/PIRATE_to_Rtab.pl).
+
+```
+PIRATE_to_Rtab.pl \
+  --input  PIRATE_out/PIRATE.unique_alleles.tsv \
+  --output pyseer/genes.Rtab \
+  --samples pyseer/gwas.samples \
+  --low  0.01 \
+  --high 0.99 \
+  --all
+```
+
+Sanity check:
 ```bash
-python - <<'EOF'
-import pandas as pd
-
-gene_file    = "PIRATE_out/PIRATE.gene_families.tsv"     # or .ordered.tsv
-pirate_genomes = "PIRATE_out/genome_list.txt"
-keep_samples = "pyseer/gwas.samples"
-out_pres     = "pyseer/pyseer_genes.pres"
-
-# Load lists
-pirate = [x.strip() for x in open(pirate_genomes) if x.strip()]
-keep   = set(x.strip() for x in open(keep_samples) if x.strip())
-
-# Read PIRATE table
-df = pd.read_csv(gene_file, sep="\t", dtype=str)
-gene_col = df.columns[0]
-
-# Use only genome columns that are in PIRATE genome list AND in your keep list
-genome_cols = [g for g in pirate if (g in df.columns and g in keep)]
-if not genome_cols:
-    raise SystemExit("No genome columns matched. Check isolate naming between PIRATE_out and gwas.samples")
-
-with open(out_pres, "w") as out:
-    for _, row in df.iterrows():
-        gene = row[gene_col]
-        for g in genome_cols:
-            v = row[g]
-            if pd.notna(v) and v != "." and v != "":
-                out.write(f"{gene}\t{g}\n")
-
-print(f"Wrote {out_pres}")
-print(f"Genomes used: {len(genome_cols)}")
-print(f"Gene families: {df.shape[0]}")
-EOF
+awk 'NR==2{for(i=2;i<=NF;i++) if($i!~"^[01]$"){print "Non-binary"; exit}; print "Binary OK"}' pyseer/genes.Rtab
 ```
 
-Sanity check (this should now look right)
+#### GWAS using fixed effects (recommended)
+
+Population structure is modelled using MDS components derived from patristic distances. This is the stable, reproducible default used for all reported analyses.
+Inputs required
+- pyseer/pyseer_birds_vs_mammal.pheno.in_masked.tsv (2-column TSV, no header: sample_id phenotype)
+- pyseer/genes.Rtab (binary Rtab; rows=variants, columns=samples)
+- pyseer/zang_core_masked.dist.tsv (square, tab-delimited distance matrix with header)
+
+*Important:* ``--pres`` must be a binary Rtab for fixed-effects GWAS. The two-line “variant–sample” list format will trigger ``ValueError: Rtab file not binary.``
+
+#### Step 1 — Build MDS cache
+
+```slurm
+#!/bin/bash
+#SBATCH --job-name=pyseer_mds
+#SBATCH --output=slurm_logs/%x_%j.out
+#SBATCH --error=slurm_logs/%x_%j.err
+#SBATCH --account=cooperma
+#SBATCH --partition=standard
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=12:00:00
+#SBATCH --mem=60G
+
+set -euo pipefail
+export BASHRCSOURCED=1
+source ~/.bashrc
+conda activate pyseer
+
+cd /groups/cooperma/bpascoe/Zang_cdtB
+mkdir -p slurm_logs pyseer
+
+pyseer \
+  --phenotypes pyseer/pyseer_birds_vs_mammal.pheno.in_masked.tsv \
+  --pres pyseer/dummy.pres \
+  --distances pyseer/zang_core_masked.dist.tsv \
+  --mds classic --max-dimensions 10 \
+  --save-m pyseer/zang_core_masked.mds.pkl \
+  --cpu 1 \
+  --output pyseer/mds_dummy.tsv
 ```
-head -n 5 pyseer/pyseer_genes.pres
-cut -f2 pyseer/pyseer_genes.pres | sort -u | wc -l
-```
-Run gene presence/absence GWAS with a slurm script: 
+
+#### Step 2 — Run gene GWAS using the saved MDS (lower memory)
 
 ```slurm
 #!/bin/bash
@@ -532,62 +563,93 @@ Run gene presence/absence GWAS with a slurm script:
 #SBATCH --account=cooperma
 #SBATCH --partition=standard
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=20
+#SBATCH --cpus-per-task=8
 #SBATCH --time=48:00:00
-#SBATCH --mem=120G
+#SBATCH --mem=180G
 
 set -euo pipefail
-
 export BASHRCSOURCED=1
 source ~/.bashrc
 conda activate pyseer
 
-WORKDIR="/groups/cooperma/bpascoe/Zang_cdtB"
-cd "$WORKDIR"
-
+cd /groups/cooperma/bpascoe/Zang_cdtB
 mkdir -p slurm_logs pyseer
 
-PHENO="pyseer/pyseer_birds_vs_mammal.pheno.in_masked.tsv"
-PRES="pyseer/pyseer_genes.pres"
-DIST="pyseer/zang_core_masked.dist.tsv"
-OUT="pyseer/gwas_genes_birds_vs_mammal.lmm.tsv"
-
-# Sanity checks
-test -s "$PHENO"
-test -s "$PRES"
-test -s "$DIST"
-
-# Run
 pyseer \
-  --phenotypes "$PHENO" \
-  --pres "$PRES" \
-  --distances "$DIST" \
-  --lmm \
-  --mds classic --max-dimensions 10 \
+  --phenotypes pyseer/pyseer_birds_vs_mammal.pheno.in_masked.tsv \
+  --pres pyseer/genes.Rtab \
+  --distances pyseer/zang_core_masked.dist.tsv \
+  --load-m pyseer/zang_core_masked.mds.pkl \
   --min-af 0.01 --max-af 0.99 \
-  --cpu "${SLURM_CPUS_PER_TASK}" \
-  > "$OUT"
+  --cpu ${SLURM_CPUS_PER_TASK} \
+  --output pyseer/gwas_genes_birds_vs_mammal.mds.tsv
 
-# Quick summary + Bonferroni threshold
 python - <<'EOF'
 import pandas as pd
-fn="pyseer/gwas_genes_birds_vs_mammal.lmm.tsv"
-df=pd.read_csv(fn, sep="\t")
+df = pd.read_csv("pyseer/gwas_genes_birds_vs_mammal.mds.tsv", sep="\t")
 pcol = "lrt-pvalue" if "lrt-pvalue" in df.columns else ("pvalue" if "pvalue" in df.columns else None)
 print("rows:", len(df))
 if pcol:
-    bonf = 0.05/len(df) if len(df)>0 else None
+    bonf = 0.05/len(df) if len(df) else None
     print("pcol:", pcol)
     print("bonferroni_0.05:", bonf)
-    if bonf:
-        print("n_sig:", (df[pcol] < bonf).sum())
-else:
-    print("No p-value column found. Columns:", df.columns.tolist())
+    print("n_sig:", (df[pcol] < bonf).sum())
 EOF
-
 ```
 
-#### Run SNPs (VCF) GWAS
+#### Multiple-testing correction (Bonferroni)
+
+```bash
+python - <<'EOF'
+import pandas as pd
+
+fn = "pyseer/gwas_genes_birds_vs_mammal.mds.tsv"
+df = pd.read_csv(fn, sep="\t")
+
+# pyseer output column naming varies slightly by mode/version
+pcol = None
+for c in ["lrt-pvalue", "pvalue", "wald-pvalue"]:
+    if c in df.columns:
+        pcol = c
+        break
+if pcol is None:
+    raise SystemExit(f"No p-value column found. Columns: {df.columns.tolist()}")
+
+m = len(df)
+bonf = 0.05 / m if m else float("nan")
+sig = (df[pcol] < bonf).sum()
+
+print("Tests (m):", m)
+print("P-value column:", pcol)
+print("Bonferroni threshold (alpha=0.05):", bonf)
+print("Significant hits:", sig)
+
+# write a convenience filtered table
+df[df[pcol] < bonf].sort_values(pcol).to_csv(
+    "pyseer/gwas_genes_birds_vs_mammal.mds.bonf_sig.tsv",
+    sep="\t", index=False
+)
+EOF
+```
+
+**Expected outputs**
+Main GWAS results table (one row per tested variant/allele), including effect size, SE, and p-values.
+``pyseer/gwas_genes_birds_vs_mammal.mds.tsv``
+
+Cached MDS components derived from the distance matrix (reuse this for SNP and unitig runs on the same sample set).
+``pyseer/zang_core_masked.mds.pkl``
+
+Bonferroni-significant hits only (sorted by p-value).
+``pyseer/gwas_genes_birds_vs_mammal.mds.bonf_sig.tsv``
+
+SLURM logs in ``slurm_logs/`` for provenance.
+
+*Interpretation:*
+This GWAS tests whether each accessory gene/allele is significantly associated with host category (bird=1 vs mammal=0) while controlling for population structure using MDS covariates derived from the recombination-masked core-genome phylogeny. Bonferroni-significant hits represent the most conservative set of host-associated gene signals for downstream validation (e.g., mapping to functional annotations, checking genomic context, and cross-checking with unitig/SNP results).
+
+If you paste your first ~10 lines of gwas_genes_birds_vs_mammal.mds.tsv (header + a few rows), I can tailor the “Interpretation” sentence to the exact columns pyseer produced in your run (so the README matches reality).
+
+#### 2. SNP-based (VCF) GWAS
 ```
 pyseer \
   --phenotypes pyseer_bird_vs_mammal.pheno.tsv \
@@ -598,7 +660,7 @@ pyseer \
   > pyseer_snps.tsv
 ```
 
-#### Run Unitig-based GWAS
+#### 3. Unitig-based GWAS
 ```
 pyseer \
   --phenotypes pyseer_bird_vs_mammal.pheno.tsv \
