@@ -871,27 +871,27 @@ pyseer \
 
 (Adjust --kmers/--pres path to the actual unitig-caller output filename.)
 
-#### Combine GWAS results (genes + SNPs + unitigs)
+#### 4. Combining GWAS results across variant types
 
-```bash
+Gene-, SNP-, and (optionally) unitig-based GWAS results were combined into a single harmonised table using a custom Python script. This ensures consistent multiple-testing correction, effect-size reporting, and downstream visualisation across variant classes.
+
+```
 python scripts/combine_pyseer_results.py \
-  --genes  pyseer/gwas_genes_birds_vs_mammal.mds.tsv \
-  --snps   pyseer/gwas_snps_birds_vs_mammal.mds.tsv \
-  --unitigs pyseer/gwas_unitigs_birds_vs_mammal.mds.tsv \
+  --genes pyseer/gwas_genes_birds_vs_mammal.mds.tsv \
+  --snps  pyseer/gwas_snps_birds_vs_mammal.mds.tsv \
   --out-prefix pyseer/birds_vs_mammal.combined
 ```
 
 Outputs:
+- birds_vs_mammal.combined.all.tsv
+- birds_vs_mammal.combined.sig_q0.05.tsv
+- birds_vs_mammal.combined.top50.tsv
 
-- ``pyseer/birds_vs_mammal.combined.all.tsv``
-- ``pyseer/birds_vs_mammal.combined.sig_q0.05.tsv``
-- ``pyseer/birds_vs_mammal.combined.top50.tsv``
+#### 5. Mapping GWAS hits to the PIRATE pangenome
 
-#### Map GWAS gene hits to PIRATE and collapse to gene families
+Significant gene-level GWAS hits were mapped back to PIRATE allele and gene-family definitions using PIRATE.unique_alleles.tsv.
 
-Annotate gene-allele GWAS results with PIRATE metadata:
-
-```bash
+```
 python scripts/annotate_gene_hits_pirate.py \
   --gwas pyseer/gwas_genes_birds_vs_mammal.mds.tsv \
   --pirate-alleles PIRATE_out/PIRATE.unique_alleles.tsv \
@@ -899,49 +899,44 @@ python scripts/annotate_gene_hits_pirate.py \
   --sig-q 0.05
 ```
 
-#### Collapse allele-level hits to family-level summary:
+#### 6. Collapsing GWAS results to PIRATE gene families
 
-- ``pyseer/birds_vs_mammal.family_level.tsv``
+Allele-level associations were collapsed to PIRATE gene families by retaining the most significant allele per family and recording the number of alleles tested.
 
-#### Rationalise annotations using reference genomes
+```
+python scripts/collapse_gwas_to_families.py \
+  PIRATE_out/PIRATE.unique_alleles.tsv \
+  pyseer/birds_vs_mammal.genes.annotated_hits.tsv \
+  pyseer/birds_vs_mammal.family_level.tsv
+```
 
-We prefer published annotations from reference genomes (NCTC11168, 81_176, 81116) rather than Prokka annotations used to build the pangenome.
+#### 7. Rationalising gene annotations using reference genomes
 
-Build reference protein DB and BLAST PIRATE representative proteins:
+To provide biologically interpretable gene names, PIRATE representative protein sequences were aligned against published reference proteomes (NCTC11168, 81-176, 81116). The best hit per gene family was retained.
 
-```bash
-mkdir -p pyseer/refs
-cat reference_genomes/NCTC11168.protein.faa \
-    reference_genomes/81_176.protein.faa \
-    reference_genomes/81116.protein.faa \
-  > pyseer/refs/campy_refs.faa
-
-makeblastdb -in pyseer/refs/campy_refs.faa -dbtype prot -out pyseer/refs/campy_refs
+```
+makeblastdb -in pyseer/refs/campy_refs.faa -dbtype prot
 
 blastp \
   -query PIRATE_out/representative_sequences.faa \
   -db pyseer/refs/campy_refs \
-  -out pyseer/pirate_reps.vs_refs.blast.tsv \
   -evalue 1e-20 \
   -max_target_seqs 5 \
-  -outfmt "6 qseqid sseqid pident length qlen slen evalue bitscore"
+  -outfmt "6 qseqid sseqid pident length qlen slen evalue bitscore" \
+  > pyseer/pirate_reps.vs_refs.blast.tsv
 ```
 
-Convert BLAST hits into best-per-family annotation table:
-
-```bash
+```
 python scripts/make_pirate_family_annotations.py \
   --blast pyseer/pirate_reps.vs_refs.blast.tsv \
-  --ref-faa reference_genomes/NCTC11168.protein.faa reference_genomes/81_176.protein.faa reference_genomes/81116.protein.faa \
+  --ref-faa reference_genomes/*.protein.faa \
   --ref-label NCTC11168 81_176 81116 \
-  --out pyseer/pirate_family_annotations.tsv \
-  --min-pident 70 \
-  --min-qcov 0.80
+  --out pyseer/pirate_family_annotations.tsv
 ```
 
-Add PIRATE rep-header gene_name/product as fallback names + create best_gene/best_product:
+These annotations were merged into the family-level GWAS results, with PIRATE representative gene names used as fallback when no reference match was available.
 
-```bash
+```
 python scripts/add_pirate_rep_annotations.py \
   --rep-faa PIRATE_out/representative_sequences.faa \
   --families pyseer/birds_vs_mammal.family_level.annotated.clean.tsv \
@@ -949,11 +944,27 @@ python scripts/add_pirate_rep_annotations.py \
   --make-bestnames
 ```
 
-#### Produce GWAS report and visualise GWAS output
-- Manahattan plots
-- Q:Q plots
-- Volcano plots
-- Map best hits to phylogeny
+**Key fields:**
+- best_gene
+- best_product
+- pirate_family
+- n_alleles
+- p_lrt
+
+#### 8. Final GWAS reporting and visualisation
+
+All plots and summary tables were regenerated using the fully annotated, family-level GWAS results.
+
+```
+python scripts/gwas_report.py \
+  --combined pyseer/birds_vs_mammal.combined.all.tsv \
+  --families pyseer/birds_vs_mammal.family_level.annotated.clean.plus_pirate.tsv \
+  --outdir pyseer/report_pack_birds_vs_mammal \
+  --sig-q 0.05 \
+  --top-n 50
+```
+
+Plots were generated using a consistent colour palette to ensure visual continuity across figures.
 
 ---
 ## Reproducibility, software versions, and resources
@@ -967,6 +978,7 @@ All analyses were performed on an HPC cluster using SLURM.
 - IQ-TREE2 v2.3.6 — [https://github.com/iqtree/iqtree2](https://github.com/iqtree/iqtree2)
 - ClonalFrameML v1.0.x — [https://github.com/xavierdidelot/ClonalFrameML](https://github.com/xavierdidelot/ClonalFrameML)
 - ClonalFrameML masking script — [cfml-maskrc_updated.py](https://github.com/Benizao1980/Mammal-adaptation-in-Campylobacter-jejuni/blob/main/scripts/cfml-maskrc_updated.py)
+- PYSEER post-processing scripts: 
 - Python v3.9+ — [https://www.python.org](https://www.python.org)
 - Conda — [https://docs.conda.io](https://docs.conda.io)
 
