@@ -793,12 +793,15 @@ EOF
 
 #### 3. Unitig-based GWAS
 
-**Required inputs**
-- Phenotype: ``pyseer/pyseer_birds_vs_mammal.pheno.in_masked.tsv``
-- Structure (fixed effects): ``pyseer/mds_components.tsv.pkl``
-- Samples list: ``pyseer/gwas.samples``
+unitig presence/absence GWAS using the same fixed-effects structure correction as gene + SNP GWAS.
 
-Build a sample list using: 
+#### Required inputs
+- `pyseer/pyseer_birds_vs_mammal.pheno.in_masked.tsv` (2-col, no header)
+- `pyseer/mds_components.tsv.pkl` (cached MDS covariates)
+- `pyseer/gwas.samples` (sample IDs used in GWAS)
+- assemblies: `contigs/<ID>.fas`
+
+#### Build paths list for assemblies
 - ``pyseer/gwas.samples``
 - ``contigs in contigs/<ID>.fas``
 
@@ -819,7 +822,8 @@ if missing: print("example missing:", missing[:5])
 EOF
 ```
 
-Build unitigs + presence/absence once
+#### Build unitigs + presence/absence (unitig-caller)
+*Note:* this step is RAM-intensive because it builds a coloured compacted de Bruijn graph (Bifrost). Expect large memory requirements.
 
 ```slurm
 #!/bin/bash
@@ -835,7 +839,7 @@ Build unitigs + presence/absence once
 
 set -euo pipefail
 source ~/.bashrc
-conda activate unitig-caller
+conda activate unitig-counter
 
 cd /groups/cooperma/bpascoe/Zang_cdtB
 mkdir -p slurm_logs pyseer/unitigs_call
@@ -848,17 +852,108 @@ unitig-caller \
   --rtab
 ```
 
-Run GWAS...
+*Output:* This should produce an Rtab (presence/absence) suitable for pyseer --pres / --kmers input (depending on chosen output).
 
-```
+#### Run unitig GWAS (pyseer)
+
+Run using the same cached MDS as genes/SNPs:
+
+```bash
 pyseer \
-  --phenotypes pyseer_bird_vs_mammal.pheno.tsv \
-  --kmers unitigs.txt.gz \
-  --distances zang_core_masked.dist.tsv \
-  --mds classic --max-dimensions 10 \
-  --cpu 20 \
-  > pyseer_unitigs.tsv
+  --phenotypes pyseer/pyseer_birds_vs_mammal.pheno.in_masked.tsv \
+  --kmers pyseer/unitigs_call/k31.unitigs.Rtab \
+  --load-m pyseer/mds_components.tsv.pkl \
+  --min-af 0.01 --max-af 0.99 \
+  --cpu 8 \
+  --uncompressed \
+  > pyseer/gwas_unitigs_birds_vs_mammal.mds.tsv
 ```
+
+(Adjust --kmers/--pres path to the actual unitig-caller output filename.)
+
+#### Combine GWAS results (genes + SNPs + unitigs)
+
+```bash
+python scripts/combine_pyseer_results.py \
+  --genes  pyseer/gwas_genes_birds_vs_mammal.mds.tsv \
+  --snps   pyseer/gwas_snps_birds_vs_mammal.mds.tsv \
+  --unitigs pyseer/gwas_unitigs_birds_vs_mammal.mds.tsv \
+  --out-prefix pyseer/birds_vs_mammal.combined
+```
+
+Outputs:
+
+- ``pyseer/birds_vs_mammal.combined.all.tsv``
+- ``pyseer/birds_vs_mammal.combined.sig_q0.05.tsv``
+- ``pyseer/birds_vs_mammal.combined.top50.tsv``
+
+#### Map GWAS gene hits to PIRATE and collapse to gene families
+
+Annotate gene-allele GWAS results with PIRATE metadata:
+
+```bash
+python scripts/annotate_gene_hits_pirate.py \
+  --gwas pyseer/gwas_genes_birds_vs_mammal.mds.tsv \
+  --pirate-alleles PIRATE_out/PIRATE.unique_alleles.tsv \
+  --out-prefix pyseer/birds_vs_mammal.genes \
+  --sig-q 0.05
+```
+
+#### Collapse allele-level hits to family-level summary:
+
+- ``pyseer/birds_vs_mammal.family_level.tsv``
+
+#### Rationalise annotations using reference genomes
+
+We prefer published annotations from reference genomes (NCTC11168, 81_176, 81116) rather than Prokka annotations used to build the pangenome.
+
+Build reference protein DB and BLAST PIRATE representative proteins:
+
+```bash
+mkdir -p pyseer/refs
+cat reference_genomes/NCTC11168.protein.faa \
+    reference_genomes/81_176.protein.faa \
+    reference_genomes/81116.protein.faa \
+  > pyseer/refs/campy_refs.faa
+
+makeblastdb -in pyseer/refs/campy_refs.faa -dbtype prot -out pyseer/refs/campy_refs
+
+blastp \
+  -query PIRATE_out/representative_sequences.faa \
+  -db pyseer/refs/campy_refs \
+  -out pyseer/pirate_reps.vs_refs.blast.tsv \
+  -evalue 1e-20 \
+  -max_target_seqs 5 \
+  -outfmt "6 qseqid sseqid pident length qlen slen evalue bitscore"
+```
+
+Convert BLAST hits into best-per-family annotation table:
+
+```bash
+python scripts/make_pirate_family_annotations.py \
+  --blast pyseer/pirate_reps.vs_refs.blast.tsv \
+  --ref-faa reference_genomes/NCTC11168.protein.faa reference_genomes/81_176.protein.faa reference_genomes/81116.protein.faa \
+  --ref-label NCTC11168 81_176 81116 \
+  --out pyseer/pirate_family_annotations.tsv \
+  --min-pident 70 \
+  --min-qcov 0.80
+```
+
+Add PIRATE rep-header gene_name/product as fallback names + create best_gene/best_product:
+
+```bash
+python scripts/add_pirate_rep_annotations.py \
+  --rep-faa PIRATE_out/representative_sequences.faa \
+  --families pyseer/birds_vs_mammal.family_level.annotated.clean.tsv \
+  --out pyseer/birds_vs_mammal.family_level.annotated.clean.plus_pirate.tsv \
+  --make-bestnames
+```
+
+#### Produce GWAS report and visualise GWAS output
+- Manahattan plots
+- Q:Q plots
+- Volcano plots
+- Map best hits to phylogeny
 
 ---
 ## Reproducibility, software versions, and resources
@@ -892,9 +987,3 @@ conda create -n pyseer -c conda-forge -c bioconda \
 
 ### Please cite: 
 TBC <link to manuscript>
-
----
-
-## Summary
-
-This integrated workflow documents a reproducible pangenome analysis of the *Zang et al.* dataset, combining detailed computational steps with inline biological interpretation. The results demonstrate an open and structurally dynamic pangenome with extensive allelic diversity and host-associated gene content variation.
