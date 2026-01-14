@@ -939,7 +939,58 @@ python scripts/gwas_report.py \
   --top-n 50
 ```
 
-Plots were generated using a consistent colour palette to ensure visual continuity across figures.
+#### Results
+
+Genome-wide association analysis identified a limited number of robust host-associated loci after correction for population structure. The strongest gene-family signal corresponded to the cytolethal distending toxin locus (cdtA/B), with multiple low-frequency alleles showing large effect sizes, consistent with host-restricted functional adaptation. In addition, significant associations were concentrated in surface glycan biosynthesis pathways, including LOS and CPS-associated genes, often occurring as multi-gene clusters. In contrast, few housekeeping genes remained significant after correction, indicating that residual lineage structure did not dominate the analysis. Together, these results suggest that mammal–bird adaptation in C. jejuni is driven by selective tuning of host-interaction loci rather than broad metabolic divergence.
+
+**cdtB**
+
+- very strong effect size (β ≈ −6.5)
+- low allele frequency (~4–5%)
+- multiple alleles (n≈5) within the family
+
+This is exactly the pattern you expect if:
+- cdtB alleles are not lineage markers
+- but instead rare, host-restricted functional variants
+- maintained under negative frequency–dependent selection
+
+**Surface glycan biology dominates the rest of the signal**
+
+Outside cdtB, the GWAS signal concentrates in:
+- LOS / CPS / glycosylation pathways
+- genes involved in: sugar transfer, outer-membrane structure, host–immune interface
+
+These hits often appear as **clusters of adjacent gene families**
+- rather than isolated single genes
+- consistent with locus-level selection
+
+*Interpretation:*
+
+This strongly supports:
+- host-specific selection on cell surface architecture
+- rather than generic metabolic adaptation
+- and aligns with host immune recognition, gut niche differences & known Campylobacter host tropism biology
+
+**Few housekeeping genes survive correction**
+
+Genes like:
+- purB
+- dxr / dxs
+- gmhA
+
+either:
+- drop out after correction
+- or appear weak and isolated
+
+👉 This argues against residual lineage confounding.
+
+**No explosion of high-frequency “easy” hits**
+
+We do not see:
+- hundreds of ubiquitous genes
+- or clear CC markers dominating the results
+
+👉 This shows the MDS-based structure correction worked.
 
 ---
 ## Reproducibility, software versions, and resources
