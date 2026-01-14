@@ -18,7 +18,10 @@ The analysis comprised **2,327 whole-genome assemblies** derived from the *Zang 
 contigs are shared online at FigShare (doi: add) and can be downloaded: 
 
 ```bash
-wget need to add link
+mkdir -p contigs
+cd contigs
+wget -O zang_contigs.tar.gz "TODO:FIGSHARE_DIRECT_DOWNLOAD_URL"
+tar -xzf zang_contigs.tar.gz
 ```
 
 Genomes and isolate data are also grouped as a collection on [pubMLST](add link)
@@ -89,7 +92,16 @@ This produced one annotated GFF per genome. These GFFs form the direct input for
 
 Unlike single-threshold clustering methods, PIRATE iteratively clusters genes across descending amino-acid identity thresholds. This allows separation of true orthologues from divergent alleles and paralogues while retaining information on structural variation.
 
-### Execution
+### Run PIRATE
+
+First, collect GFFs into a single input directory:
+
+```
+mkdir -p pirate_gff
+find output -name "*.gff" -type f -print -exec ln -sf {} pirate_gff/ \;
+```
+
+Then run PIRATE:
 
 ```slurm
 #!/bin/bash
@@ -116,11 +128,16 @@ Identity thresholds spanning 80–98% are appropriate for *Campylobacter*, captu
 
 ## Visualisation
 
-Additional plots were made to summarise core/accessory structure, allelic diversity, and structural variation across the pangenome.
+Additional plots summarising core/accessory structure, allelic diversity, and structural variation:
 
 ```bash
-python3 pirate_plotting.py --pirate-out PIRATE_out --outdir pirate_plots --all --palette life_aquatic_blues
+python3 scripts/pirate_plotting.py \
+  --pirate-out PIRATE_out \
+  --outdir pirate_plots \
+  --all \
+  --palette life_aquatic_blues
 ```
+
 ---
 
 ## Global pangenome structure
@@ -322,6 +339,7 @@ We used the updated script cfml-maskrc_updated.py, which adds robustness and use
 This approach removes recent horizontal signal while retaining deep phylogenetic structure.
 
 Minimal masking run (extant recombination only)
+
 ```bash
 python3 cfml-maskrc_updated.py \
   cfml_core_out/cfml_core \
@@ -355,6 +373,7 @@ This masked alignment represents a recombination-aware substrate suitable for do
 ## Downstream: phylogeny on recombination-masked alignment
 
 Once masking is complete, re-infer an ML tree on the masked alignment to obtain branch lengths/topology less driven by homologous recombination:
+
 ```bash
 iqtree2 \
   -s cfml_core_out/core_alignment.masked.fasta \
@@ -381,7 +400,7 @@ Unless otherwise stated, GWAS were performed using fixed effects (MDS covariates
 ### Prepare PYSEER input files
 
 #### Patristic distance matrix from the masked tree
-Either compute distances directly from the masked tree:
+Build patristic distance matrix from the masked tree:
 
 ```bash
 python - <<'EOF' > zang_core_masked.dist.tsv
@@ -482,19 +501,6 @@ Phenotype encoding:
 - 1 = bird
 - 0 = mammal
 
-Sanity check sample matching
-
-```bash
-cut -f1 pyseer_birds_vs_mammal.pheno.tsv | sort > pheno.ids
-head -n 1 zang_core_masked.dist.tsv | tr '\t' '\n' | tail -n +2 | sort > dist.ids
-comm -3 pheno.ids dist.ids | head
-```
-
-Expected output
-```
-
-```
-
 ### Run GWAS with genes, SNPs and unitigs
 
 #### 1. Genes (presence/absence)
@@ -514,11 +520,6 @@ PIRATE_to_Rtab.pl \
   --all
 ```
 
-Sanity check:
-```bash
-awk 'NR==2{for(i=2;i<=NF;i++) if($i!~"^[01]$"){print "Non-binary"; exit}; print "Binary OK"}' pyseer/genes.Rtab
-```
-
 As not all isolate genomes from the dataset used to construct the pangenome will be used in the GWAS, we can subset the .Rtab to just include those that will be used in the GWAS (xxx mammal isolates vs xxx bird isoaltes): 
 
 Create the sample list from the phenotype file
@@ -531,6 +532,7 @@ head pyseer/gwas.samples
 (That wc -l should match the “Read 962 phenotypes / Analysing 962 samples…”)
 
 Subset genes.Rtab down to those samples
+
 ```bash
 python - <<'EOF'
 keep = set(x.strip() for x in open("pyseer/gwas.samples") if x.strip())
@@ -551,11 +553,6 @@ with open(inp) as fin:
 
 print("Wrote", outp, "with", len(new_header)-1, "samples")
 EOF
-```
-
-Sanity check:
-```
-head -n 1 pyseer/genes.subset.Rtab | tr '\t' '\n' | tail -n +2 | wc -l
 ```
 
 #### GWAS using fixed effects
@@ -674,7 +671,6 @@ variant | af | filter-pvalue | lrt-pvalue | beta | beta-std-err | intercept | PC
 - PC1..PC10 → population structure covariates
 - notes → usually empty or flags
 - **Use lrt-pvalue for significance.**
-- 
 
 #### 2. SNP-based (VCF) GWAS
 
@@ -697,43 +693,21 @@ File you need to locate / create:
 We can generate one from the core alignment we have (PIRATE_out/core_alignment.fasta; or the masked version) using snp-sites:
 
 ```bash
-conda install -c bioconda snp-sites bcftools
-```
-
-```bash
 snp-sites -v -o pyseer/core_snps.vcf PIRATE_out/core_alignment.fasta
-```
-
-```bash
 bgzip -c pyseer/core_snps.vcf > pyseer/core_snps.vcf.gz
-```
-
-```bash
 tabix -p vcf pyseer/core_snps.vcf.gz
 ```
 
 *Important:*
 If you want SNPs from the masked alignment instead, use cfml_core_out/core_alignment.masked.fasta — just be aware masking inserts Ns, which is fine but changes missingness patterns.
 
-### Step 1 - Subset VCF to your samples (recommended)
+### Step 1 - Subset VCF to your samples
 
 Using the VCF we just created:
 ```
 bcftools view -S pyseer/gwas.samples -Oz -o pyseer/core_snps.birds_vs_mammal.vcf.gz pyseer/core_snps.vcf.gz
 tabix -f -p vcf pyseer/core_snps.birds_vs_mammal.vcf.gz
 ```
-
-Sanity checks:
-
-```
-# how many samples did we keep?
-bcftools query -l pyseer/core_snps.birds_vs_mammal.vcf.gz | wc -l
-
-# compare to gwas.samples
-comm -3 <(bcftools query -l pyseer/core_snps.birds_vs_mammal.vcf.gz | sort) <(sort pyseer/gwas.samples) | head
-```
-
-*That comm -3 should be empty. If not, it’s an ID mismatch issue.*
 
 ### Step 2 -  Run pyseer SNP GWAS with the same MDS cache
 Use the same model as genes: fixed effects + cached MDS.
@@ -807,6 +781,7 @@ unitig presence/absence GWAS using the same fixed-effects structure correction a
 
 ```bash
 cd /groups/cooperma/bpascoe/Zang_cdtB
+
 python - <<'EOF'
 import os
 samples=[x.strip() for x in open("pyseer/gwas.samples") if x.strip()]
@@ -854,7 +829,7 @@ unitig-caller \
 
 *Output:* This should produce an Rtab (presence/absence) suitable for pyseer --pres / --kmers input (depending on chosen output).
 
-#### Run unitig GWAS (pyseer)
+#### Run unitig GWAS
 
 Run using the same cached MDS as genes/SNPs:
 
