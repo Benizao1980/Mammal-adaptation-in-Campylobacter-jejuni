@@ -77,3 +77,42 @@ This can be derived from:
 
 ### Metadata table
 A tab-delimited file containing at minimum:
+- `sample` uniquely matches the matrix row names
+- `host` (or source) defines ecological grouping
+- `CC` (or lineage) can be used for stratified analyses
+
+Additional covariates (e.g. country, year, lineage) are supported.
+
+---
+
+## Design philosophy
+
+Panopticon is built around the following principles:
+
+- **Separation of concerns**  
+  I/O, statistics, annotation, and plotting are modular and reusable.
+
+- **Statistical transparency**  
+  All hypothesis tests report effect sizes, permutation schemes, and assumptions.
+
+- **Lineage awareness**  
+  Population structure is treated as a feature to model, not ignore.
+
+- **Reproducibility**  
+  Analyses are deterministic given fixed seeds and inputs, with explicit outputs.
+
+- **Tool-agnosticism**  
+  Panopticon does not assume a specific pangenome inference method. 
+  
+---
+
+## Status
+
+Panopticon is under active development.
+
+Current focus:
+- stabilising statistical and ordination workflows,
+- formalising PERMANOVA / PERMDISP implementations,
+- and refactoring existing analysis scripts into a coherent API.
+
+Planned extensions include functional annotation, enrichment testing, and expanded support for alternative pangenome inputs.
