@@ -1,118 +1,127 @@
-# Panopticon
+<p align="center">
+  <img src="panopticon_logo_variant2_partial.svg" width="360" alt="PANOPTICON logo">
+</p>
 
-**Panopticon** is a modular analysis toolbox for exploring **pangenome structure, diversity, and host association** using gene presence/absence data and associated metadata.
+# PANOPTICON
 
-It is designed for **downstream analysis** of pangenomes inferred using tools such as **PIRATE**, **Panaroo**, or similar workflows, with a focus on:
-- accessory genome structure,
-- host and source association,
-- lineage-aware statistical testing, and
-- interpretable, publication-ready outputs.
+*Exploratory analysis of population structure and ecological signal in bacterial pangenomes.*
 
-Panopticon prioritises **clarity, reproducibility, and statistical rigour**, while remaining flexible across pathogens and datasets.
+PANOPTICON is a toolbox for looking carefully at pangenome data **before** jumping to
+formal inference or machine-learning models.
+
+The motivation is simple: in bacterial genomics, many apparent signals — host association,
+geography, phenotype — are shaped or confounded by **population structure, recombination,
+and lineage effects**. If those patterns aren’t understood first, downstream analyses can
+be difficult to interpret or, worse, misleading.
+
+PANOPTICON exists to make those patterns visible.
 
 ---
 
-## Key concepts
+## Where this fits
 
-Panopticon treats the pangenome as a **high-dimensional ecological system**, where genomes are samples, genes are features, and metadata (host, source, lineage) define structured variation.
+PANOPTICON is the **foundation layer** of a connected analytical programme:
 
-Rather than relying solely on clustering or visual inspection, Panopticon integrates:
-- distance-based ordination,
-- rarefaction and accumulation analyses,
-- formal hypothesis testing (e.g. PERMANOVA),
-- and biologically interpretable summaries of gene content.
+- **PANOPTICON** explores population structure, gene content, and ecological signal
+- **SourceRunnerML** builds on that structure to perform source attribution
+- **BAMPS-ML** applies the same philosophy to antimicrobial resistance phenotypes
 
-This makes it particularly suited for questions around:
-- host adaptation,
-- zoonotic transmission,
-- lineage vs ecology effects,
-- and accessory genome diversification.
+In practice, PANOPTICON is where hypotheses are generated, stress-tested, and refined
+before being formalised elsewhere.
+
+---
+
+## What PANOPTICON is (and isn’t)
+
+PANOPTICON is **not** a pangenome construction pipeline. It assumes that gene
+presence/absence matrices already exist (e.g. from PIRATE or Panaroo).
+
+What it provides instead is a set of **modular, script-based analyses** for asking
+questions such as:
+
+- How strongly structured is this population?
+- Are observed differences driven by host ecology or lineage?
+- Which signals persist after accounting for population structure?
+- Where does variability sit: between lineages, within lineages, or across environments?
+
+The emphasis is on **exploration and interpretation**, not automation.
 
 ---
 
 ## Core functionality
 
-### Accessory genome structure
-- Presence/absence matrix handling (binary gene families)
-- Jaccard and related distance metrics
-- Ordination methods (PCA, MDS, UMAP)
-- Lineage-aware visualisation
+PANOPTICON supports:
 
-### Pangenome composition
-- Core / soft-core / shell / cloud summaries
-- Gene frequency distributions
-- Per-genome gene content statistics
+- ordination and visualisation of gene presence/absence data
+- multivariate testing (e.g. PERMANOVA and related approaches)
+- lineage-aware and stratified comparisons
+- integration of metadata (host, geography, phenotype, source)
+- exploratory summaries designed to inform downstream modelling
 
-### Rarefaction and accumulation
-- Pangenome and core genome accumulation curves
-- Stratified rarefaction by host, source, or other metadata
-- Confidence intervals via resampling
-
-### Statistical testing
-- PERMANOVA for testing host/source effects on gene content
-- Support for **restricted permutations** (e.g. within clonal complexes)
-- PERMDISP to assess dispersion effects
-- Pairwise comparisons with multiple-testing correction
-
-### Annotation and rationalisation (planned)
-- Mapping gene families to representative loci
-- Collapsing gene families to functional categories (e.g. COGs)
-- Functional enrichment analyses across hosts or sources
-
----
-
-## Inputs
-
-Panopticon is input-agnostic but expects:
-
-### Gene presence/absence matrix
-- Rows: samples / genomes  
-- Columns: gene families  
-- Values: binary (0/1)
-
-This can be derived from:
-- PIRATE (`binary_presence_absence.fasta`)
-- Panaroo gene presence/absence tables
-- Other equivalent formats
-
-### Metadata table
-A tab-delimited file containing at minimum:
-- `sample` uniquely matches the matrix row names
-- `host` (or source) defines ecological grouping
-- `CC` (or lineage) can be used for stratified analyses
-
-Additional covariates (e.g. country, year, lineage) are supported.
+Analyses are intentionally **composable** rather than wrapped in a single black-box
+workflow. This reflects the reality that different datasets often require different
+questions to be asked.
 
 ---
 
 ## Design philosophy
 
-Panopticon is built around the following principles:
+PANOPTICON treats the pangenome as a **population-genetic object**, not just a feature
+matrix.
 
-- **Separation of concerns**  
-  I/O, statistics, annotation, and plotting are modular and reusable.
+Key principles are:
+- population structure should be characterised, not ignored
+- lineage effects should be examined explicitly
+- apparent associations should be interrogated, not assumed
+- visualisation and statistics should support interpretation, not replace it
 
-- **Statistical transparency**  
-  All hypothesis tests report effect sizes, permutation schemes, and assumptions.
+This philosophy carries through directly into SourceRunnerML and BAMPS-ML.
 
-- **Lineage awareness**  
-  Population structure is treated as a feature to model, not ignore.
-
-- **Reproducibility**  
-  Analyses are deterministic given fixed seeds and inputs, with explicit outputs.
-
-- **Tool-agnosticism**  
-  Panopticon does not assume a specific pangenome inference method. 
-  
 ---
 
-## Status
+## Typical use cases
 
-Panopticon is under active development.
+PANOPTICON is most useful when you want to:
 
-Current focus:
-- stabilising statistical and ordination workflows,
-- formalising PERMANOVA / PERMDISP implementations,
-- and refactoring existing analysis scripts into a coherent API.
+- explore pangenome structure prior to machine learning
+- understand drivers of host or ecological association
+- contextualise GWAS or ML results
+- decide whether a signal is likely to generalise beyond a single lineage
 
-Planned extensions include functional annotation, enrichment testing, and expanded support for alternative pangenome inputs.
+It is deliberately conservative, and often points out when a dataset is **not yet ready**
+for stronger claims.
+
+---
+
+## Input data
+
+PANOPTICON operates on gene presence/absence matrices generated by external tools such as:
+
+- **PIRATE**
+- **Panaroo**
+
+These are combined with metadata tables describing isolates (e.g. host, source,
+geography, phenotype).
+
+Exact input formats and example workflows are provided in the repository documentation.
+
+---
+
+## Relationship to downstream tools
+
+Insights from PANOPTICON typically inform:
+
+- feature selection and interpretation in **SourceRunnerML**
+- understanding lineage effects in **BAMPS-ML**
+- framing results sections and figures in manuscripts
+
+In this sense, PANOPTICON often shapes the *questions* before models are ever trained.
+
+---
+
+## Documentation and citation
+
+Individual scripts and example workflows are documented in the repository.
+
+If you use PANOPTICON in academic work, please cite the associated manuscript(s) and
+acknowledge the upstream pangenome tools used to generate input data.
